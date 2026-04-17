@@ -2,6 +2,8 @@
 
 Custom Qt5 apps for the Qingping Air Monitor 2 (Rockchip PX30, Buildroot Linux, Qt 5.14.2).
 
+<img width="960" height="960" alt="telegram-cloud-photo-size-4-5985291614701685804-y" src="https://github.com/user-attachments/assets/c6c4049b-b663-4784-aca9-6e83c34bdad0" />
+
 ## Device info
 
 - **SoC:** Rockchip PX30, quad-core Cortex-A35 @ 1.5 GHz
