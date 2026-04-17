@@ -1,0 +1,5 @@
+qtapp/build/
+qtapp/sysroot/
+qtapp/aqtinstall.log
+*.swp
+.DS_Store

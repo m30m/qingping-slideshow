@@ -1,0 +1,117 @@
+#!/bin/sh
+now=`date '+%Y-%m-%d %H:%M:%S'`
+today=`date '+%Y-%m-%d'`
+SNOW_OS='QingSnow2App'
+thisLog='/data/etc/debug/watchdog.log'
+snowLog="/data/etc/log/$today.log"
+baseDir="/qingping/bin"
+sleepTime=5
+awaken_num=0
+lastAwakenTime=-1
+if [ ! -f "$baseDir/$SNOW_OS" ];then
+	echo "$baseDir/$SNOW_OS missing, check agin" > $thisLog
+	exit
+fi
+
+user="root"
+if [ "$user" != "root" ];then
+	echo "this tool must run as root"
+	exit
+fi
+
+# 定义计数器
+checkMemCount=0
+# 内存监控方法
+checkMem(){
+
+	# 通过 free -m 获取内存的 free 和 total （单位M）
+	free=`free -m | grep Mem | awk '{print $4}'`
+	now=`date '+%Y-%m-%d %H:%M:%S'`
+	# 如果 free 小于 45 M ，kill 掉 QingSnow2App
+	if [ $free -lt 45 ];then
+		echo "[$now][watchdog.sh] free memory is less than 45M, kill QingSnow2App" >> $snowLog
+		pkill $SNOW_OS
+	fi
+
+	# checkMemCount 自增
+	let checkMemCount=$checkMemCount+1
+	if [ $checkMemCount -eq 5 ];then
+		echo $now > /data/etc/debug/checkMem.log
+		checkMemCount=0
+		sync
+		echo 3 > /proc/sys/vm/drop_caches
+	fi
+}
+
+while [ 0 -lt 1 ]
+do
+	now=`date '+%Y-%m-%d %H:%M:%S'`
+	appCount=`ps x | grep "$SNOW_OS" | grep -v grep | wc -l`
+	dhcpcdCount=`pgrep dhcpcd | wc -l`
+	wpa_supplicantCount=`pgrep wpa_supplicant | wc -l`
+	miioHelperCount=`ps -ef | grep miio_client_helper_nomqtt.sh | grep -v grep | wc -l`
+	miioCount=`ps -ef | grep -w miio_client | grep -v grep | wc -l`
+	noiseCount=`ps -ef | grep -w analyze_noise.sh | grep -v grep | wc -l`
+
+	# QingSnowApp
+	if [ $appCount -eq 0 ];then
+		let awaken_num=$awaken_num+1
+		if [ $awaken_num -gt 4 ];then
+			let now_time_t=`date +%s`
+			let diff=$now_time_t-$lastAwakenTime
+			if [ $diff -lt 60 ];then
+				echo "[$now][watchdog.sh] The system will be restarted by watchdog.sh" >> $snowLog
+				reboot -f
+			fi
+		fi
+		let lastAwakenTime=`date +%s`
+		cd $baseDir
+		echo "$now SnowApp not exists,restart process now..." > $thisLog
+		echo "[$now][watchdog.sh] SnowApp not exists,restart process now,lastAwakenTime:$lastAwakenTime,awaken_num:$awaken_num" >> $snowLog
+		/qingping/bin/QingSnow2App -platform eglfs  &
+	fi
+
+	# dhcpcd
+	if [ $dhcpcdCount -eq 0 ];then
+		echo "[$now][watchdog.sh] dhcpcd not exists,restart process now..." >> $snowLog
+		# 启动hdcpd
+		/etc/init.d/S41dhcpcd start 
+	fi
+
+	# wpa_supplicant
+	if [ $wpa_supplicantCount -eq 0 ];then
+		wifiDisabled=`cat /data/etc/setting.ini | grep wifi_disabled=true | wc -l`
+		if [ $wifiDisabled -eq 0 ];then
+			echo "[$now][watchdog.sh] wpa_supplicant not exists,restart process now..." >> $snowLog
+		# 启动wpa_supplicant
+			wpa_supplicant -Dnl80211 -iwlan0 -c/data/cfg/wpa_supplicant.conf &	
+		fi
+	fi
+
+	# miio_client_helper_nomqtt.sh
+	if [ $miioHelperCount -eq 0 ];then
+		echo "[$now][watchdog.sh] miio_client_helper_nomqtt.sh not exists,restart process now..." >> $snowLog
+		# 启动miio_client_helper_nomqtt.sh
+		/qingping/bin/miio/miio.sh helper_restart &
+	fi
+
+	# miio_client
+	if [ $miioCount -eq 0 ];then
+		echo "[$now][watchdog.sh] miio_client not exists,restart process now..." >> $snowLog
+		# 启动miio_client
+		/qingping/bin/miio/miio.sh client_restart &
+	fi
+
+	# analyze_noise.sh
+	if [ $noiseCount -eq 0 ];then
+		echo "[$now][watchdog.sh] analyze_noise.sh not exists,restart process now..." >> $snowLog
+		# 启动analyze_noise.sh
+		/qingping/bin/analyze_noise.sh &
+	fi
+
+	# 检查内存
+	checkMem
+
+	sleep $sleepTime
+done
+
